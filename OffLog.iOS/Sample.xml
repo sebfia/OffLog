@@ -1,0 +1,805 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+	xmlns:content="http://purl.org/rss/1.0/modules/content/"
+	xmlns:wfw="http://wellformedweb.org/CommentAPI/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:atom="http://www.w3.org/2005/Atom"
+	xmlns:sy="http://purl.org/rss/1.0/modules/syndication/"
+	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
+	>
+<channel>
+	<title>Xamarin Blog</title>
+	<atom:link href="http://blog.xamarin.com/feed/" rel="self" type="application/rss+xml" />
+	<link>http://blog.xamarin.com</link>
+	<description></description>
+	<lastBuildDate>Thu, 17 Jul 2014 17:52:03 +0000</lastBuildDate>
+	<language>en-US</language>
+		<sy:updatePeriod>hourly</sy:updatePeriod>
+		<sy:updateFrequency>1</sy:updateFrequency>
+	<generator>http://wordpress.org/?v=3.9.1</generator>
+	<item>
+		<title>Using Custom Controls in Xamarin.Forms on Windows Phone</title>
+		<link>http://blog.xamarin.com/using-custom-controls-in-xamarin.forms-on-windows-phone/</link>
+		<comments>http://blog.xamarin.com/using-custom-controls-in-xamarin.forms-on-windows-phone/#comments</comments>
+		<pubDate>Thu, 17 Jul 2014 17:52:03 +0000</pubDate>
+		<dc:creator><![CDATA[Nish Anil]]></dc:creator>
+				<category><![CDATA[Visual Studio]]></category>
+		<category><![CDATA[Windows Phone]]></category>
+		<category><![CDATA[Xamarin.Forms]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12511</guid>
+		<description><![CDATA[Xamarin.Forms lets developers create native user interfaces on iOS, Android and Windows Phone from a single, shared C# codebase. Since the UI is rendered using the native controls of the target platform, it gives you great flexibility in customizing the controls separately on each platform. Each control is rendered differently on each platform using a [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>Xamarin.Forms lets developers create native user interfaces on iOS, Android and Windows Phone from a single, shared C# codebase. Since the UI is rendered using the native controls of the target platform, it gives you great flexibility in customizing the controls separately on each platform. Each control is rendered differently on each platform using a <strong>Renderer</strong> class, which in turn creates a native control, arranges it on the screen and adds the behavior specified in the shared code.</p>
+<p>Previously, we showed you how to build custom renderers in Xamarin.Forms on iOS and Android platforms to extend custom built controls. In case you missed it, its all here:</p>
+<ul>
+<li><a href="http://blog.xamarin.com/using-custom-uiviewcontrollers-in-xamarin.forms-on-ios/">Using Custom UIViewControllers in Xamarin.Forms on iOS</a></li>
+<li><a href="http://blog.xamarin.com/using-custom-controls-in-xamarin.forms-on-android/">Using Custom Controls in Xamarin.Forms on Android</a></li>
+</ul>
+<p>In practice,  you will use the same techniques to create custom renderers on Windows Phone as well.</p>
+<p><a href="http://blog.xamarin.com/wp-content/uploads/2014/07/WP-CustomControls-Xamarin.Forms_.jpg"><img class="alignnone size-full wp-image-12546" src="http://blog.xamarin.com/wp-content/uploads/2014/07/WP-CustomControls-Xamarin.Forms_.jpg" alt="WP-CustomControls-Xamarin.Forms" width="817" height="486" /></a></p>
+<h2>Windows Phone Custom Controls</h2>
+<p>.NET third party vendors provide you with wide range of top quality reusable UI controls on the Windows Phone platform. Sometimes it is easier to buy and use them than to build something on your own. Especially, the data visualization controls such as charts that transform your tabular data into something beautiful on the Windows Phone screen.</p>
+<p>In this blog post, I will take you through steps involved in integrating a <a href="http://www.infragistics.com/products/windows-phone/"><b>Infragistics</b></a> XamDataChart control for Windows Phone in Xamarin.Forms. <a href="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-Charts.png"><img class="alignright wp-image-12512 size-medium" src="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-Charts-167x300.png" alt="Xamarin.Forms-CustomControl-Charts" width="167" height="300" /></a></p>
+<p>There are two main parts to implementing a custom control with a renderer -</p>
+<ol>
+<li>Create your own custom Xamarin.Forms control with bindable properties in Shared Project so that Xamarin.Forms API can refer them.</li>
+<li>Create a renderer in Windows Phone platform that will be used to display the Infragistics XamDataChart control and subscribe to property changed notifications</li>
+</ol>
+<h2>CustomChartView Control</h2>
+<p>In my shared project, I’m going to create a new control called <strong>CustomChartView</strong> that will be used in my Xamarin.Forms page. CustomChartView must inherit from <b>Xamarin.Forms.View</b>.</p>
+<pre class="brush: csharp; title: ; notranslate">
+public class CustomChartView : View
+{
+  public static readonly BindableProperty ItemSourceProperty =
+    BindableProperty.Create&lt;CustomChartView, StockMarketDataSample&gt;(p =&gt;
+    p.ItemSource, new StockMarketDataSample());
+  public StockMarketDataSample ItemSource
+  {
+    get { return (StockMarketDataSample)GetValue(ItemSourceProperty); }
+    set { SetValue(ItemSourceProperty, value); }
+  }
+  // Additional bindable properties
+}
+</pre>
+<p>Notice the <b>BindableProperty</b> called <strong>ItemSourceProperty</strong> - this property is my DataModel which is of type StockMarketDataSample that has some necessary logic to simulate live data. In a real scenario, this will be replaced with the data that comes from a web service or something similar. In the code, you will see two more properties <strong>PriceDisplayType</strong> and <strong>ShowSpline</strong>. These are the properties that will help us interact with the chart for e.g. for changing the Price Type (CandleStick or OHLC) or Show/Hide a SplineAreaSeries from Xamarin.Forms controls.</p>
+<h2>CustomChartView Renderer</h2>
+<p>Now, with my Xamarin.Forms control in place I can write some Windows Phone platform specific code. I will implement a <strong>CustomChartViewRenderer</strong> class that inherits from a ViewRenderer and layout the XamDataChart on it.</p>
+<pre class="brush: csharp; title: ; notranslate">
+public class CustomChartViewRenderer : ViewRenderer&lt;CustomChartView, XamDataChart&gt;
+{
+  XamDataChart DataChart;
+  public CustomChartViewRenderer()
+  {
+    DataChart = new XamDataChart();
+    //..code
+  }
+  //.. code
+}
+</pre>
+<p>Since this renderer on Windows Phone inherits from View, which means Xamarin.Forms will handle all of the size calculations and will have the normal properties of a standard Windows Phone View. Add the XamDataChart to the project and update the references accordingly. Additionally, you will need to add more code to set your <strong>XAxis</strong>, <strong>YAxis</strong> and the <strong>FinancialPriceSeries</strong> to the XamDataChart. That code has been omitted from this post for brevity.</p>
+<p>Now, I will set my renderer to display the XamDataChart control when the CustomChartView is added to the page layout. This is done by overriding the <b>OnElmentChanged</b> method and calling the <b>SetNativeControl</b> method in it.</p>
+<pre class="brush: csharp; title: ; notranslate">
+protected override void OnElementChanged(ElementChangedEventArgs&lt;CustomChartView&gt; e)
+{
+  base.OnElementChanged(e);
+  if (e.OldElement != null || this.Element == null)
+    return;
+  UpdateChart();
+  SetNativeControl(DataChart);
+}
+</pre>
+<p><strong>UpdateChart()</strong> method is a private method that sets the DataContext of the XamDataChart control to the Xamarin.Forms CustomChart control&#8217;s ItemSource property.</p>
+<pre class="brush: csharp; title: ; notranslate">
+private void UpdateChart()
+{
+  DataChart.DataContext = this.Element.ItemSource;
+  DateXAxis.ItemsSource = this.Element.ItemSource;
+  series.ItemsSource = this.Element.ItemSource;
+  //.. code
+}
+</pre>
+<p><strong>Export Renderer Attribute</strong></p>
+<pre class="brush: csharp; title: ; notranslate">
+[assembly: ExportRenderer((typeof(CustomChartView)), typeof(CustomChart.WinPhone.ViewRenderers.CustomChartViewRenderer))]
+namespace CustomChart.WinPhone.ViewRenderers
+{
+  public class CustomChartViewRenderer : ViewRenderer&lt;CustomChartView, XamDataChart&gt;
+  {
+  }
+}
+</pre>
+<p>To get the control to show up in the actual view, I need to set an attribute <b>ExportRenderer</b> to the CustomChartViewRenderer class.</p>
+<h2>Wiring up the UI in XAML</h2>
+<p>Finally, I will add our custom control to the Page.  There are two approaches to create user interfaces in Xamarin.Forms. The first one is to create UI views entirely with source code using the Xamarin.Forms API. The other option available is to use Extensible Application Markup Language (XAML) which is the approach I’ve taken to build this demo.</p>
+<pre class="brush: xml; title: ; notranslate">
+&lt;?xml version=&quot;1.0&quot; encoding=&quot;utf-8&quot; ?&gt;
+&lt;ContentPage xmlns=&quot;http://xamarin.com/schemas/2014/forms&quot;
+			 xmlns:x=&quot;http://schemas.microsoft.com/winfx/2009/xaml&quot;
+		     x:Class=&quot;CustomChart.HomePage&quot;
+             xmlns:custom=&quot;clr-namespace:CustomChart.CustomControls;assembly=CustomChart.WinPhone&quot;&gt;
+    &lt;Grid HorizontalOptions=&quot;FillAndExpand&quot; VerticalOptions=&quot;FillAndExpand&quot; &gt;
+        &lt;Grid.RowDefinitions&gt;
+            &lt;RowDefinition Height=&quot;80&quot;/&gt;
+            &lt;RowDefinition Height=&quot;80&quot;/&gt;
+            &lt;RowDefinition Height=&quot;*&quot; /&gt;
+            &lt;RowDefinition Height=&quot;1&quot; /&gt;
+        &lt;/Grid.RowDefinitions&gt;
+        &lt;Grid.ColumnDefinitions&gt;
+            &lt;ColumnDefinition Width=&quot;*&quot;/&gt;
+            &lt;ColumnDefinition Width=&quot;1&quot;/&gt;
+        &lt;/Grid.ColumnDefinitions&gt;
+        &lt;Grid.Padding&gt;20&lt;/Grid.Padding&gt;
+        &lt;StackLayout Orientation=&quot;Horizontal&quot; Grid.Row=&quot;0&quot; Grid.Column=&quot;0&quot; HorizontalOptions=&quot;Center&quot;&gt;
+            &lt;Button Text=&quot;Start&quot; x:Name=&quot;StartButton&quot; /&gt;
+            &lt;Button Text=&quot;Stop&quot;  x:Name=&quot;StopButton&quot;  /&gt;
+            &lt;Label Text=&quot;Spline:&quot; VerticalOptions=&quot;Center&quot;/&gt;
+            &lt;Switch x:Name=&quot;ShowSplineSwitch&quot;/&gt;
+        &lt;/StackLayout&gt;
+        &lt;Picker x:Name=&quot;chartPicker&quot; Title=&quot;Chart Type&quot; HorizontalOptions=&quot;FillAndExpand&quot; VerticalOptions=&quot;Center&quot; Grid.Row=&quot;1&quot;/&gt;
+        &lt;custom:CustomChartView x:Name=&quot;chart&quot; Grid.Row=&quot;2&quot; /&gt;
+    &lt;/Grid&gt;
+&lt;/ContentPage&gt;
+</pre>
+<p>This page contains a Start Button &#8211; that starts a live feed, a Stop Button &#8211; thats stops the live feed, a Switch &#8211; that lets you show/hide a SplineAreaSeries in the Chart, and a Picker &#8211; that let&#8217;s you choose the Price Display Type (CandleStick or OHLC).</p>
+<p><a href="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-Charts-Spline.png"><img class="aligncenter wp-image-12519 size-medium" src="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-Charts-Spline-167x300.png" alt="Xamarin.Forms-CustomControl-Charts-Spline" width="167" height="300" /></a></p>
+<p><strong>Handling Property Changes </strong></p>
+<p>In the CustomChartControl of the shared project, along with the ItemSourceProperty, I have exposed the <strong>PriceDisplayTypeProperty</strong> and <strong>ShowSplineProperty</strong> as well. We can now easily set these property to interact with the XamDataChart. To make this work, we need to listen to the property changed event and set appropriate property of the XamDataChart<b>.</b> We will override the <b>OnElementPropertyChanged</b> method in the CustomChartViewRenderer class to do so.</p>
+<pre class="brush: csharp; title: ; notranslate">
+protected override void OnElementPropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+{
+  base.OnElementPropertyChanged(sender, e);
+  if (Control == null || Element == null)
+    return;
+  if (e.PropertyName == CustomChart.CustomControls.CustomChartView.PriceDisplayTypeProperty.PropertyName)
+    series.DisplayType = Element.PriceDisplayType.ToIGPriceType();
+  if (e.PropertyName == CustomChart.CustomControls.CustomChartView.ShowSplineProperty.PropertyName)
+    ShowHideSpline();
+}
+private void ShowHideSpline()
+{
+  if (this.Element.ShowSpline)
+    DataChart.Series.Add(splineSeries);
+  else if (DataChart.Series.Contains(splineSeries))
+    DataChart.Series.Remove(splineSeries);
+}
+</pre>
+<h2>Bringing it all together</h2>
+<p>That&#8217;s it! Now we can set these properties in the appropriate event handlers of the controls. Also, setting the ItemSource property to a StockMarketDataSample will populate the chart with the values.</p>
+<pre class="brush: csharp; title: ; notranslate">
+public HomePage ()
+{
+  InitializeComponent ();
+  chart.ItemSource = _data = new StockMarketDataSample();
+}
+void ShowSplineSwitch_Toggled(object sender, Xamarin.Forms.ToggledEventArgs e)
+{
+  chart.ShowSpline = e.Value;
+}
+void chartPicker_SelectedIndexChanged(object sender, EventArgs e)
+{
+  PriceDisplayType priceDisplayType;
+  if (Enum.TryParse&lt;PriceDisplayType&gt;(chartPicker.Items[chartPicker.SelectedIndex], out priceDisplayType))
+    chart.PriceDisplayType = priceDisplayType;
+}
+</pre>
+<p>To simulate a Live Data, StockMarketServiceClient is used which has a timer that ticks every few milliseconds and raises an event with new value. Subscribing to that event and updating the ItemSource will change the visualization in the chart.</p>
+<p><a href="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-WP.gif"><img class="alignright wp-image-12513 size-full" src="http://blog.xamarin.com/wp-content/uploads/2014/07/Xamarin.Forms-CustomControl-WP.gif" alt="Xamarin.Forms-CustomControl-WP" width="190" height="316" /></a>To learn more about customizing your Xamarin.Forms controls and applications be sure to read our <a href="http://developer.xamarin.com/guides/cross-platform/xamarin-forms/">documentation</a>.</p>
+<p><em>Infragistics controls were used as an example in this post to show you how well Xamarin.Forms can integrate with third party controls. You can use any third party controls or custom controls that you have built with Xamarin.Forms and the procedure to get that working remains the same. </em></p>
+<p><b>Source Code</b></p>
+<p>You can <a href="https://github.com/nishanil/Xamarin.Forms-WP-CustomControls">download the full source code for this project from my GitHub</a>. <i>Make sure you </i><i>download and install Infragistics libraries</i><i> before compiling.</i></p>
+<p><em><a href="http://forums.xamarin.com/discussion/20548/">Discuss this blog post in the Xamarin Forums</a></em></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/using-custom-controls-in-xamarin.forms-on-windows-phone/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>New Collection View Features in iOS 8</title>
+		<link>http://blog.xamarin.com/new-collection-view-features-in-ios-8/</link>
+		<comments>http://blog.xamarin.com/new-collection-view-features-in-ios-8/#comments</comments>
+		<pubDate>Wed, 16 Jul 2014 17:33:26 +0000</pubDate>
+		<dc:creator><![CDATA[Mike Bluestein]]></dc:creator>
+				<category><![CDATA[iOS]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12468</guid>
+		<description><![CDATA[Collection Views are a powerful user interface technology for laying out collections of data. With fantastic support for high performance grid layouts, flexible line based layouts, and fully custom layouts, along with integrated animation capabilities, they make creating beautiful data-driven UIs a wonderful experience both for the developer and the end user. iOS 8 adds [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>Collection Views are a powerful user interface technology for laying out collections of data. With fantastic support for high performance grid layouts, flexible line based layouts, and fully custom layouts, along with integrated animation capabilities, they make creating beautiful data-driven UIs a wonderful experience both for the developer and the end user.</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/collection-views.png" alt="collection views" width="664" height="296" class="aligncenter size-full wp-image-12505" /></p>
+<p>iOS 8 adds some nice enhancements to Collection Views, including the ability to self-size cells without the need for using a delegate. Likewise, the layout attributes of individual cells can now be adjusted directly from within the cell class without having to use a delegate. This makes it easier to make small layout changes that are related to a particular cell.</p>
+<h2>Self-sizing Cells</h2>
+<p>First, let&#8217;s look at how to self-size cells. Before iOS 8, creating cells that sized to their content required working within a layout class directly or via a layout&#8217;s delegate, such as the <strong>UICollectionViewDelegateFlowLayout</strong>.</p>
+<p>For example, the following code adjusts the cell size to fit cells comprised of simple UILabels, presented using a <strong>UICollectionViewFlowLayout</strong>:</p>
+<pre class="brush: csharp; title: ; notranslate">
+class FlowLayoutDelegate : UICollectionViewDelegateFlowLayout
+{
+  string[] items;
+  UIStringAttributes attr;
+  public FlowLayoutDelegate (string[] items)
+  {
+    this.items = items;
+    attr = new UIStringAttributes {
+      Font = new UILabel ().Font
+    };
+  }
+  public override SizeF GetSizeForItem (UICollectionView collectionView, UICollectionViewLayout layout, NSIndexPath indexPath)
+  {
+    string text = items [indexPath.Row];
+    return new NSString (text).GetSizeUsingAttributes (attr);
+  }
+}
+</pre>
+<p>This code results in a Collection View where each cell fits the text it contains:</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/self-sizing.png" alt="self sizing cells" width="378" height="533" class="aligncenter size-full wp-image-12500" /></p>
+<p>Creating cells that are self-sized is much easier in iOS 8. Simply set the <strong>EstimatedItemSize</strong> on the <strong>UICollectionViewFlowLayout</strong> and implement <strong>SizeThatFits</strong> or use AutoLayout in the cell class.</p>
+<p>For example, to self-size the cells in the example above, set <strong>EstimatedItemSize</strong> as shown below:</p>
+<pre class="brush: csharp; title: ; notranslate">
+flowLayout = new UICollectionViewFlowLayout (){
+  EstimatedItemSize = new SizeF (44, 144)
+};
+</pre>
+<p>Then, simply adding the following implementation of <strong>SizeThatFits</strong> in the cell class produces the same result, without the need for the <strong>UICollectionViewDelegateFlowLayout</strong> implementation:</p>
+<pre class="brush: csharp; title: ; notranslate">
+public override SizeF SizeThatFits (SizeF size)
+{
+  label.Frame = new RectangleF (new PointF (0, 0), label.AttributedText.Size);
+  return label.AttributedText.Size;
+}
+</pre>
+<h2>Adjusting Layout Attributes in Cells</h2>
+<p>iOS 8 also makes it easier to manipulate the layout attributes returned from within the cell class without resorting to a <strong>UICollectionViewDelegateFlowLayout</strong>. Just override <strong>PreferredLayoutAttributesFittingAttributes</strong> in the cell class.</p>
+<p>The following code changes the font of every other label and adjusts the layout for each cell appropriately:</p>
+<pre class="brush: csharp; title: ; notranslate">
+public override UICollectionViewLayoutAttributes PreferredLayoutAttributesFittingAttributes (UICollectionViewLayoutAttributes layoutAttributes)
+{
+  var newLayoutAttributes = (UICollectionViewLayoutAttributes)layoutAttributes.Copy ();
+  if (layoutAttributes.IndexPath.Row % 2 == 0) {
+    //
+    label.TextColor = UIColor.Red;
+    ContentView.BackgroundColor = UIColor.LightGray;
+    var attr = new NSAttributedString (Text, UIFont.SystemFontOfSize (28.0f));
+    label.Font = UIFont.SystemFontOfSize (28.0f);
+    //
+    newLayoutAttributes.Frame = new RectangleF (new PointF (0, 0), attr.Size);
+    label.Frame = new RectangleF (new PointF (0, 0), attr.Size);
+  } else {
+    //
+    newLayoutAttributes.Frame = new RectangleF (new PointF (0, 0), label.AttributedText.Size);
+    label.Frame = new RectangleF (new PointF (0, 0), label.AttributedText.Size);
+  }
+  return newLayoutAttributes;
+}
+</pre>
+<p>This allows fine-grained control at the cell level, as shown below:</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/layout-attributes.png" alt="layout attributes" width="378" height="533" class="aligncenter size-full wp-image-12502" /></p>
+<p>As you can see, iOS 8 adds flexibility to Collection Views, allowing granular control of cells directly from the cell class and making it easier to control cell layout and sizing when needed.</p>
+<p>The code from this post is available <a href="https://github.com/mikebluestein/SelfSizingCells" title="SelfSizingCells GitHub repo" target="_blank">here</a>.</p>
+<p><a href="http://forums.xamarin.com/discussion/20519" title="Discuss in Forums" target="_blank"><em>Discuss this blog post in the Xamarin Forums</em></a></p>
+<p><meta name="twitter:card" content="summary"><meta name="twitter:domain" content="http://blog.xamarin.com"><meta name="twitter:site" content="@xamarinhq"><meta name="twitter:creator" content="@mikebluestein"><meta name="twitter:image:src" content="http://blog.xamarin.com/wp-content/uploads/2014/07/collection-views.png"><meta name="twitter:title" content="New Collection View Features in iOS 8"><meta name="twitter:description" content="Learn how to take advantage of new Collection View features in iOS 8"></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/new-collection-view-features-in-ios-8/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Mobile .NET Meetups and Xamarin 3 Celebrations in July</title>
+		<link>http://blog.xamarin.com/mobile-.net-meetups-and-xamarin-3-celebrations-through-july-2014/</link>
+		<comments>http://blog.xamarin.com/mobile-.net-meetups-and-xamarin-3-celebrations-through-july-2014/#comments</comments>
+		<pubDate>Tue, 15 Jul 2014 16:21:38 +0000</pubDate>
+		<dc:creator><![CDATA[Alexandra Fonseca]]></dc:creator>
+				<category><![CDATA[Community]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12460</guid>
+		<description><![CDATA[We&#8217;ve had some amazing Xamarin 3 celebrations over the last few months, but we aren&#8217;t done just yet. This month, Mobile .NET developer groups around the world are joining in to celebrate the latest Xamarin release with pizza, cake, and in-depth sessions on all of the new features in Xamarin 3. We have also launched [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>We&#8217;ve had some amazing Xamarin 3 celebrations over the last few months, but we aren&#8217;t done just yet. This month, Mobile .NET developer groups around the world are joining in to celebrate the latest Xamarin release with pizza, cake, and in-depth sessions on all of the new features in Xamarin 3. We have also launched a brand new Twitter account, <a href="http://twitter.com/XamarinEvents" target="_blank">@XamarinEvents</a>, which will regularly tweet about upcoming Xamarin and community events.</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/highres_377313502-1024x579.jpeg" alt="Xamarin Cake" width="1024" height="579" class="aligncenter size-large wp-image-12461" /></p>
+<p>Here are some upcoming Xamarin developer group meetups:</p>
+<p style="margin-bottom: 0;"><a href="http://www.meetup.com/Nashville-Xamarin-User-Group/events/189835352/" target="_blank">Nashville Xamarin User Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="us" width="16" height="11" style="text-align:center"/></p>
+<ul>
+<li><strong>Nashville, TN</strong>: Tuesday, July 15th 6:30PM</p>
+</li>
+<li><strong>Xamarin.Forms Demo &#038; Lab</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://www.meetup.com/Austin-Mobile-NET-Developers-Group/events/184839512/" target="_blank">Austin Mobile .NET Developers Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="us" width="16" height="11" style="text-align:center" /></p>
+<ul>
+<li><strong>Austin, TX</strong>: Wednesday, July 16th 6:30PM</li>
+<li><strong>Cross Platform Development with Portable Class Libraries</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://forums.xamarin.com/discussion/20441" target="_blank">Portland Area .NET Users Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="in" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Portland, OR</strong>: Thursday, July 17th 6:00PM</li>
+<li><strong>Creating UIs for Cross-Platform Apps with Xamarin</strong>, with Xamarin&#8217;s <a href="http://www.twitter.com/jamesmontemagno" title="James Montemagno on Twitter" target="_blank">James Montemagno</a></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://www.meetup.com/Los-Angeles-Mobile-NET-Developers-Group/events/193292112/" target="_blank">Los Angeles Mobile .NET Developers Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="in" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Los Angeles, CA</strong>: Monday, July 21st 7:00PM</li>
+<li><strong>Xamarin Basics</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://forums.xamarin.com/discussion/19450" target="_blank">Israel .NET Developer Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/07/il.png" alt="il" width="16" height="11" style="text-align:center" /></p>
+<ul>
+<li><strong>Tel Aviv, Israel</strong>: Tuesday, July 22nd 5:30PM</li>
+<li><strong>Building Cross Platform Apps with Xamarin</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://www.meetup.com/Minnesota-Enterprise-Mobile/events/193540452/" target="_blank">Minnesota Enterprise Mobile</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="in" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Wayzata, MN</strong>: Tuesday, July 22nd 5:30PM</li>
+<li><strong>Building iOS User Interfaces with Xamarin</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://forums.xamarin.com/discussion/20440" target="_blank">Northwest Valley .NET User Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="in" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Glendale, AZ</strong>: Wednesday, July 23rd 6:00PM</li>
+<li><strong>Building iOS, Android, and Windows Apps in C# with Xamarin</strong>, with Xamarin&#8217;s <a href="https://twitter.com/jamesmontemagno" title="James on Twitter" target="_blank">James Montemagno</a></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://forums.xamarin.com/discussion/19523" target="_blank">Boston Mobile C# Developers Group</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="us" width="16" height="11" style="text-align:center" /></p>
+<ul>
+<li><strong>Cambridge, MA</strong>: Thursday, July 24th 6:00PM</li>
+<li><strong>Introduction to Xamarin.Forms</strong>, with Xamarin&#8217;s <a href="https://twitter.com/pierceboggan" title="Pierce on Twitter" target="_blank">Pierce Boggan</a></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://forums.xamarin.com/discussion/18976" target="_blank">Arizona &#8211; Xamarin</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="us" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Scottsdale, AZ</strong>: Thursday, July 24th 6:00PM</li>
+<li><strong>Xamarin 3! iOS and Android Development in C# with Xamarin</strong></li>
+</ul>
+<p style="margin-bottom: 0;"><a href="http://www.meetup.com/Chicago-dotNet_Mobile_Developers/events/193612402/" target="_blank">Chicago .NET Mobile Developers</a> <img src="http://blog.xamarin.com/wp-content/uploads/2014/02/us.png" alt="us" width="16" height="11"  style="text-align:center" /></p>
+<ul>
+<li><strong>Chicago, IL</strong>: Thursday, July 31st 5:45PM</p>
+</li>
+<li><strong>Introduction to the MVVMCross Cross Platform Framework</strong>
+</ul>
+<p>Xamarin events are always happening around the world, so if you don&#8217;t see your city listed above, be sure to also check out the Xamarin <a href="http://forums.xamarin.com/categories/events" target="_blank">Events</a> forum where new meetups are being added all the time. Additionally, don&#8217;t forget to follow our brand new <a href="http://twitter.com/XamarinEvents" target="_blank">@XamarinEvents</a> Twitter account to make sure you never miss an upcoming Xamarin event.</p>
+<p>Don&#8217;t see a developer group in your area and want to get one started? We&#8217;re here to help! We have a <a href="http://forums.xamarin.com/discussion/13080" title="Tips and tricks on starting a developer group" target="_blank">tips and tricks</a> guide on starting a developer group, our introduction to Xamarin <a href="http://forums.xamarin.com/discussion/12954" title="Introduction to Xamarin slide deck" target="_blank">slide deck</a>, and of course our <a href="http://blog.xamarin.com/xamarin-developer-group-growth-and-sponsorship/" title="Xamarin Community Sponsorship" target="_blank">community sponsorship program</a> to get you on your way.  We also want to hear from you, so please feel free to <a href="mailto:hello@xamarin.com" target="_blank">send us an email</a> or tweet <a href="http://www.twitter.com/xamarinhq" title="Xamarin on Twitter" target="_blank">@XamarinHQ</a> so we can help spread the word and continue to grow the Xamarin community.</p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/mobile-.net-meetups-and-xamarin-3-celebrations-through-july-2014/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Xamarin on Film: @dotnetConf &amp; FlashCast</title>
+		<link>http://blog.xamarin.com/xamarin-on-dotnetconf-and-flashcast/</link>
+		<comments>http://blog.xamarin.com/xamarin-on-dotnetconf-and-flashcast/#comments</comments>
+		<pubDate>Fri, 11 Jul 2014 15:00:22 +0000</pubDate>
+		<dc:creator><![CDATA[James Montemagno]]></dc:creator>
+				<category><![CDATA[Awesome]]></category>
+		<category><![CDATA[Conference]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12434</guid>
+		<description><![CDATA[Earlier this year, Xamarin invaded Channel 9&#8242;s Visual Studio Toolbox and Dev Radio shows. Response to all 6 shows has been amazing, with over 325,000 views so far! Now, we&#8217;re back again with even more great videos for your weekend enjoyment. Microsoft hosted their second dotnetConf, a free online conference, in June, and Xamarin was there [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>Earlier this year, <a href="http://blog.xamarin.com/xamarin-invades-channel-9/" title="Xamarin Invades Channel 9" target="_blank">Xamarin invaded Channel 9&#8242;s Visual Studio Toolbox and Dev Radio</a> shows. Response to all 6 shows has been amazing, with over 325,000 views so far! Now, we&#8217;re back again with even more great videos for your weekend enjoyment.</p>
+<p><img class="aligncenter size-medium wp-image-12435" src="http://blog.xamarin.com/wp-content/uploads/2014/07/dotnetconflogo-300x80.png" alt="dotnetconflogo" width="300" height="80" /></p>
+<p>Microsoft hosted their second dotnetConf, a free online conference, in June, and Xamarin was there in full force. I&#8217;ve included my talk <em>Developing Native iOS, Android, and Windows Apps with Xamarin</em> below, which you can find, with all of the great .NET related videos from this year&#8217;s conference, <a href="http://channel9.msdn.com/Events/dotnetConf/2014/" target="_blank">on Channel 9</a>.</p>
+<p><iframe width="300" height="150" style="height: 324px; width: 576px;" src="http://channel9.msdn.com/Events/dotnetConf/2014/Developing-Native-iOS-Android-and-Windows-Apps-with-Xamarin/player?h=324&amp;w=576&amp;format=html5" allowfullscreen="allowfullscreen" frameborder="0" scrolling="no"></iframe></p>
+<p><a href="http://flashcast.azurewebsites.net/" title="FlashCast Web Series" target="_blank">FlashCast</a> is a brand new web series offering unique, 15-minute webinars on awesome topics. Evangelist Mike Bluestein kicked off the very first FlashCast with <a href="http://flashcast.azurewebsites.net/stream/episode/15" title="FlashCast iOS Introduction" target="_blank">Build your first iOS App with Visual Studio and Xamarin</a>, included below:</p>
+<p><iframe width="300" height="150" style="height: 320px; width: 480px;" src="http://www.ustream.tv/embed/recorded/49247826?v=3&amp;amp;wmode=direct" allowfullscreen="allowfullscreen" frameborder="0" scrolling="no"></iframe></p>
+<p>Our next entry in the FlashCast series was on how to <a href="http://flashcast.azurewebsites.net/stream/episode/5" target="_blank">Build your first Android app with Visual Studio and Xamarin</a>:</p>
+<p><iframe width="300" height="150" style="height: 320px; width: 480px;" src="http://www.ustream.tv/embed/recorded/48606099?v=3&amp;amp;wmode=direct" allowfullscreen="allowfullscreen" frameborder="0" scrolling="no"></iframe></p>
+<p>Stay tuned over the next few weeks for even more new FlashCast episodes featuring Xamarin!</p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/xamarin-on-dotnetconf-and-flashcast/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Adding View Effects in iOS 8</title>
+		<link>http://blog.xamarin.com/adding-view-effects-in-ios-8/</link>
+		<comments>http://blog.xamarin.com/adding-view-effects-in-ios-8/#comments</comments>
+		<pubDate>Wed, 09 Jul 2014 19:23:53 +0000</pubDate>
+		<dc:creator><![CDATA[Mike Bluestein]]></dc:creator>
+				<category><![CDATA[iOS]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12405</guid>
+		<description><![CDATA[In iOS 8, Apple has added UIKit level support for effects such as blur and vibrancy. These effects are seen in system-level UIs such as the blur effect shown when opening a folder or swiping to the lock screen, and can now be added to your own applications with just a few lines of code. [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>In iOS 8, Apple has added UIKit level support for effects such as blur and vibrancy. These effects are seen in system-level UIs such as the blur effect shown when opening a folder or swiping to the lock screen, and can now be added to your own applications with just a few lines of code.</p>
+<p><img class="aligncenter size-full wp-image-12410" src="http://blog.xamarin.com/wp-content/uploads/2014/07/vieweffects.png" alt="view effects" width="285" height="598" /></p>
+<h2>Blur Effect</h2>
+<p>The first effect you can use is the blur effect, represented by the <strong>UIBlurEffect</strong> class. Adding a blur effect is easy. Create a <strong>UIBlurEffect</strong> and a <strong>UIVisualEffectView</strong> from the effect. Then just add the effect view to the view hierarchy.</p>
+<p>For example, the following code adds a blur effect:</p>
+<pre class="brush: csharp; title: ; notranslate">
+var blur = UIBlurEffect.FromStyle (UIBlurEffectStyle.Light);
+var blurView = new UIVisualEffectView (blur) {
+  Frame = new RectangleF (0, 0, imageView.Frame.Width, 400)
+};
+View.Add (blurView);
+</pre>
+<p>This code dynamically blurs the content beneath it. For instance, when added to a view hierarchy containing a scrollable image, the effect of the blur changes at runtime as the image is moved:</p>
+<p><img class="aligncenter size-full wp-image-12411" src="http://blog.xamarin.com/wp-content/uploads/2014/07/blur.png" alt="blur" width="598" height="598" /></p>
+<p>The blur effect comes in three styles:</p>
+<ul>
+<li>UIBlurEffectStyle.Light</li>
+<li>UIBlurEffectStyle.ExtraLight</li>
+<li>UIBlurEffectStyle.Dark</li>
+</ul>
+<p>These change the appearance of the blur as shown below:</p>
+<p><img class="aligncenter size-full wp-image-12412" src="http://blog.xamarin.com/wp-content/uploads/2014/07/blur-style.png" alt="blur style" width="897" height="647" /></p>
+<h2>Vibrancy Effect</h2>
+<p>In addition to blur, iOS includes a vibrancy effect (<strong>UIVibrancyEffect</strong>), which allows content displayed over a blur to remain legible. Vibrancy effects are created from blur effects, and are also displayed using a <strong>UIVisualEffectView</strong>. Any view the effect should be applied to is added as a subview of the <strong>UIVisualEffectView</strong>&#8216;s <strong>ContentView</strong>.</p>
+<p>For example, the following code adds a label to be displayed over the blurred view created above:</p>
+<pre class="brush: csharp; title: ; notranslate">
+// vibrancy view
+var frame = new Rectangle (10, 10, 100, 50);
+var vibrancy = UIVibrancyEffect.FromBlurEffect (blur);
+var vibrancyView = new UIVisualEffectView (vibrancy) {
+  Frame = frame
+};
+label = new UILabel {
+  Text = &quot;Hello iOS 8!&quot;,
+  Frame = vibrancyView.Bounds
+};
+vibrancyView.ContentView.Add (label);
+blurView.ContentView.Add (vibrancyView);
+</pre>
+<p>When the user scrolls the image, the blur changes and the label&#8217;s text is modified dynamically such that it remains readable:</p>
+<p><img class="aligncenter size-full wp-image-12413" src="http://blog.xamarin.com/wp-content/uploads/2014/07/vibrancy.png" alt="vibrancy" width="285" height="598" /></p>
+<p>These effects are useful when you want them applied dynamically. Of course, rendering them has some cost, so if you can get the results you are looking for with a static effect, that should be used. However, for creating a level of polish, with a sense of depth on par with iOS itself, it&#8217;s nice to now have these features available.</p>
+<p>The code from this post is available <a href="https://gist.github.com/mikebluestein/3443c3d86c01566b51fb" title="iOS 8 visual effects code" target="_blank">here</a>.</p>
+<p><a href="http://forums.xamarin.com/discussion/20017" title="Discuss in Forums" target="_blank"><em>Discuss this blog post in the Xamarin Forums</em></a></p>
+<p>&nbsp;</p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/adding-view-effects-in-ios-8/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Build Great Photo Experiences in iOS 8 with PhotoKit</title>
+		<link>http://blog.xamarin.com/build-great-photo-experiences-in-ios-8-with-photokit/</link>
+		<comments>http://blog.xamarin.com/build-great-photo-experiences-in-ios-8-with-photokit/#comments</comments>
+		<pubDate>Mon, 07 Jul 2014 15:59:22 +0000</pubDate>
+		<dc:creator><![CDATA[Mike Bluestein]]></dc:creator>
+				<category><![CDATA[iOS]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12371</guid>
+		<description><![CDATA[PhotoKit is a new framework in iOS 8 that allows you to query the system image library and create custom user interfaces to view and modify its contents. To use PhotoKit from Xamarin.iOS, you can download the preview release in our alpha channel. PhotoKit includes a number of classes that represent image and video assets, [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p><strong>PhotoKit</strong> is a new framework in iOS 8 that allows you to query the system image library and create custom user interfaces to view and modify its contents. To use PhotoKit from Xamarin.iOS, you can download the preview release in our alpha channel.</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/photokit1.png" alt="PhotoKit1" width="393" height="554" class="aligncenter size-full wp-image-12378" /></p>
+<p>PhotoKit includes a number of classes that represent image and video assets, as well as collections of assists such as albums and folders. Collectively, PhotoKit represents these in what it calls model objects.</p>
+<p>The model objects that represents the photos and videos themselves are of type <strong>PHAsset</strong>. A <strong>PHAsset</strong> contains metadata such as the asset&#8217;s media type and its creation date.</p>
+<p>Similarly, the <strong>PHAssetCollection</strong> and <strong>PHCollectionList</strong> classes contain metadata about asset collections and collection lists respectively. Asset collections are groups of assets, such as all the photos and videos for a given year. Likewise, collection lists are groups of asset collections, such as photos and videos grouped by year.</p>
+<p>PhotoKit makes it easy to query model data through a variety of <em>fetch</em> methods. For example, to retrieve all images, you would call <code>PFAsset.Fetch</code>, passing the <code>PHAssetMediaType.Image</code> media type.</p>
+<pre class="brush: csharp; title: ; notranslate">
+PHFetchResult fetchResults = PHAsset.FetchAssets (PHAssetMediaType.Image, null);
+</pre>
+<p>The <strong>PHFetchResult</strong> instance would then contain all the <strong>PFAsset</strong> instances representing images. To get the images themselves, you use the <strong>PHImageManager</strong> (or the caching version, <strong>PHCachingImageManager</strong>) to make a request for the image by calling <code>RequestImageForAsset</code>. For example, the following code retrieves an image for each asset in a <strong>PHFetchResult</strong> to display in a collection view cell:</p>
+<pre class="brush: csharp; title: ; notranslate">
+public override UICollectionViewCell GetCell (UICollectionView collectionView, NSIndexPath indexPath)
+{
+  var imageCell = (ImageCell)collectionView.DequeueReusableCell (cellId, indexPath);
+  imageMgr.RequestImageForAsset ((PHAsset)fetchResults [(uint)indexPath.Item], thumbnailSize,
+    PHImageContentMode.AspectFill, new PHImageRequestOptions (), (img, info) =&gt; {
+      imageCell.ImageView.Image = img;
+    });
+    return imageCell;
+}
+</pre>
+<p>This results in a grid of images as shown below:</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/photokit1.png" alt="PhotoKit1" width="393" height="554" class="aligncenter size-full wp-image-12378" /></p>
+<p>That&#8217;s how to handle querying and reading data. You can also write changes back to the library. Since multiple interested applications are able to interact with the system photo library, you can register an observer to be notified of changes using a <strong>PhotoLibraryObserver</strong>. Then, when changes come in, your application can update accordingly. For example, here&#8217;s a simple implementation to reload the collection view above:</p>
+<pre class="brush: csharp; title: ; notranslate">
+class PhotoLibraryObserver : PHPhotoLibraryChangeObserver
+{
+  readonly PhotosViewController controller;
+  public PhotoLibraryObserver (PhotosViewController controller)
+  {
+    this.controller = controller;
+  }
+  public override void PhotoLibraryDidChange (PHChange changeInstance)
+  {
+    DispatchQueue.MainQueue.DispatchAsync (() =&gt; {
+      var changes = changeInstance.GetFetchResultChangeDetails (controller.fetchResults);
+      controller.fetchResults = changes.FetchResultAfterChanges;
+      controller.CollectionView.ReloadData ();
+    });
+  }
+}
+</pre>
+<p>To actually write changes back from your application, you create a change request. Each of the model classes has an associated change request class. For example, to change a <strong>PHAsset</strong>, you create a <strong>PHAssetChangeRequest</strong>. The steps to perform changes that are written back to the photo library and sent to observers like the one above are:</p>
+<ol>
+<li>Perform the editing operation.</li>
+<li>Save the filtered image data to a <strong>PHContentEditingOutput</strong> instance.</li>
+<li>Make a change request to publish the changes form the editing output.</li>
+</ol>
+<p>Here&#8217;s an example that writes back a change to an image that applies a core image noir filter:</p>
+<pre class="brush: csharp; title: ; notranslate">
+void ApplyNoirFilter (object sender, EventArgs e)
+{
+  Asset.RequestContentEditingInput (new PHContentEditingInputRequestOptions (), (input, options) =&gt; {
+    //
+    // perform the editing operation, which applies a noir filter in this case
+    var image = CIImage.FromUrl (input.FullSizeImageUrl);
+    image = image.CreateWithOrientation ((CIImageOrientation)input.FullSizeImageOrientation);
+    var noir = new CIPhotoEffectNoir {
+      Image = image
+    };
+    var ciContext = CIContext.FromOptions (null);
+    var output = noir.OutputImage;
+    var uiImage = UIImage.FromImage (ciContext.CreateCGImage (output, output.Extent));
+    imageView.Image = uiImage;
+    //
+    // save the filtered image data to a PHContentEditingOutput instance
+    var editingOutput = new PHContentEditingOutput(input);
+    var adjustmentData = new PHAdjustmentData();
+    var data = uiImage.AsJPEG();
+    NSError error;
+    data.Save(editingOutput.RenderedContentUrl, false, out error);
+    editingOutput.AdjustmentData = adjustmentData;
+    //
+    // make a change request to publish the changes form the editing output
+    PHPhotoLibrary.GetSharedPhotoLibrary.PerformChanges (
+      () =&gt; {
+        PHAssetChangeRequest request = PHAssetChangeRequest.ChangeRequest(Asset);
+        request.ContentEditingOutput = editingOutput;
+      },
+      (ok, err) =&gt; Console.WriteLine (&quot;photo updated successfully: {0}&quot;, ok));
+  });
+}
+</pre>
+<p>When the users selects the button, the filter is applied:</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/photokit2.png" alt="PhotoKit2" width="827" height="568" class="aligncenter size-full wp-image-12379" /></p>
+<p>And thanks to the <strong>PHPhotoLibraryChangeObserver</strong>, the change is reflected in the collection view when the user navigates back:</p>
+<p><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/photokit3.png" alt="PhotoKit3" width="393" height="554" class="aligncenter size-full wp-image-12380" /></p>
+<p>PhotoKit is a welcome addition to iOS that allows greater flexibility for incorporating photo library data into applications. It opens the doors for third party developers to build more integrated photo and video experiences than ever before.</p>
+<p>The code from this post is available in my <a href="https://github.com/mikebluestein/PhotoKitDemo" title="PhotoKitDemo source code" target="_blank">GitHub repo</a>.</p>
+<p><a href="http://forums.xamarin.com/discussion/19886" title="Discuss in Forums" target="_blank"><em>Discuss this blog post in the Xamarin Forums</em></a></p>
+<p><meta name="twitter:card" content="summary"><meta name="twitter:domain" content="http://blog.xamarin.com"><meta name="twitter:site" content="@xamarinhq"><meta name="twitter:creator" content="@mikebluestein"><meta name="twitter:image:src" content="http://blog.xamarin.com/wp-content/uploads/2014/07/photokit1.png"><meta name="twitter:title" content="Using PhotoKit in iOS 8"><meta name="twitter:description" content="Learn how to build integrated photo experiences in iOS 8 apps using PhotoKit"></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/build-great-photo-experiences-in-ios-8-with-photokit/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Contest: Build Your First F# Mobile App</title>
+		<link>http://blog.xamarin.com/contest-build-your-first-f-mobile-app/</link>
+		<comments>http://blog.xamarin.com/contest-build-your-first-f-mobile-app/#comments</comments>
+		<pubDate>Thu, 03 Jul 2014 20:28:45 +0000</pubDate>
+		<dc:creator><![CDATA[Joseph Hill]]></dc:creator>
+				<category><![CDATA[Contest]]></category>
+		<category><![CDATA[F#]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12342</guid>
+		<description><![CDATA[What&#8217;s better than F# week? F# weekend! We&#8217;re announcing another contest to commemorate this programming language in a new contest. Earlier this week, we started F# week off by announcing our &#8220;Run an F# app, get an F# shirt&#8221; campaign. Tuesday and Wednesday, Microsoft F# MVP Rachel Reese taught us the basics of F#, and even [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p><a href="http://www.zazzle.co.uk/i_heart_f_round_sticker-217290325908574778"><img class="alignright wp-image-12364" src="http://blog.xamarin.com/wp-content/uploads/2014/07/00000073-297x300.png" alt="Experience the power of building native mobile apps in F# with Xamarin." width="201" height="203" /></a></p>
+<p>What&#8217;s better than F# week? F# weekend! We&#8217;re announcing another contest to commemorate this programming language in a new contest. Earlier this week, we started F# week off by announcing our <a href="http://blog.xamarin.com/run-a-f-sharp-app-get-a-f-sharp-shirt/">&#8220;Run an F# app, get an F# shirt&#8221;</a> campaign. Tuesday and Wednesday, Microsoft F# MVP Rachel Reese taught us the basics of F#, and even built a simple task-management app.</p>
+<p>Today, we are inviting you to dive into building native mobile apps in F# with our newest contest. Creating a mobile app with F# is as easy as File -&gt; New -&gt; F# -&gt; iOS or Android within Xamarin Studio.</p>
+<h2 style="color: #444444;">How to Enter</h2>
+<ol>
+<li style="color: #4e5758;"><a href="http://xamarin.com/download" style="color: #3498db;">Install Xamarin 3</a></li>
+<li style="color: #4e5758;">File -&gt; New -&gt; F# -&gt; iOS or Android in Xamarin Studio</li>
+<li><span style="color: #4e5758;">Build an succinct, expressive native mobile app using F#</span></li>
+<li style="color: #4e5758;">Tweet your entry with a <b>picture of your F# app running</b> and this text:<br />
+“<strong>I just built my first F# mobile app using @XamarinHQ:  http://xamar.in/r/fsharp</strong>“</li>
+</ol>
+<p><img class="size-medium wp-image-12269 aligncenter" src="http://blog.xamarin.com/wp-content/uploads/2014/07/2014-07-01_1728-151x300.png" alt="2014-07-01_1728" width="151" height="300" /></p>
+<h2 style="color: #444444;">How to Win</h2>
+<p style="color: #4e5758;">Want to stack the cards in your favor? Do any or all of the following to increase your odds of winning:</p>
+<ul style="color: #4e5758;">
+<li>Build something cool</li>
+<li>Utilize F# language features</li>
+<li>Blog about your experience</li>
+<li>Open-source your app</li>
+</ul>
+<h2 style="color: #444444;">Prizes</h2>
+<ul style="color: #4e5758;">
+<li><strong>Grand Prize:</strong> <a href="https://www.apple.com/mac-mini/">Apple Mac Mini</a></li>
+<li><strong>Runner Up:</strong> <a href="https://play.google.com/store/devices/details?id=samsung_gear_live_black">Samsung Gear Live Watch</a></li>
+<li><strong>Valid Entries</strong>: Plush Xamarin Monkey</li>
+</ul>
+<p style="color: #4e5758;">Not sure where to begin? Xamarin evangelist James Montemagno has put together a list of some <a href="http://blog.xamarin.com/jump-start-f-sharp-mobile-development/">guides, samples, and apps</a> to help get you started. If you are new to mobile development or Xamarin and want to get started today, visit <a href="http://xamarin.com/download">xamarin.com/download</a>.</p>
+<p style="color: #4e5758;">All submissions must be made by Monday, July 21st at 8AM EDT. We will evaluate each app and choose a winner. A valid entry consists of a tweet with screenshot(s) of your F# app running. Other factors considered will include novelty, code quality, and reliability. Winners will be announced on Twitter. Contestants should follow @xamarinhq to enable us to DM you for private follow-up. There is no purchase necessary to enter the Build Your First F# Mobile App contest.</p>
+<p><meta name="twitter:card" content="summary"><meta name="twitter:domain" content="http://blog.xamarin.com"><meta name="twitter:site" content="@xamarinhq"><meta name="twitter:creator" content="@JosephHill"><meta name="twitter:image:src" content="http://blog.xamarin.com/wp-content/uploads/2014/07/00000073-297x300.png"><meta name="twitter:description" content="Build your first F# mobile app with Xamarin for our new contest. Not sure where to start? We've got great resources on the blog."><meta name="twitter:title" content="Contest: Build Your First F# Mobile App"></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/contest-build-your-first-f-mobile-app/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Awesome Samples to Jumpstart F# Mobile Development</title>
+		<link>http://blog.xamarin.com/jump-start-f-sharp-mobile-development/</link>
+		<comments>http://blog.xamarin.com/jump-start-f-sharp-mobile-development/#comments</comments>
+		<pubDate>Thu, 03 Jul 2014 14:40:14 +0000</pubDate>
+		<dc:creator><![CDATA[James Montemagno]]></dc:creator>
+				<category><![CDATA[F#]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12198</guid>
+		<description><![CDATA[Throughout the week we have seen a wide assortment of F# samples and applications that you can use to jump start your F# mobile development. Here are a few new resources available to developers, including full sample applications comprised of beautiful F# source code. Starter Guides With the release of Xamarin 3, we brought first [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p>Throughout the week we have seen a wide assortment of F# samples and applications that you can use to jump start your F# mobile development. Here are a few new resources available to developers, including full sample applications comprised of beautiful F# source code.</p>
+<p><img class="aligncenter wp-image-12201" src="http://blog.xamarin.com/wp-content/uploads/2014/07/tutorial.png" alt="F# Tutorial" width="500" height="301" /></p>
+<h2>Starter Guides</h2>
+<p>With the release of Xamarin 3, we brought first class F# support to developers inside of Xamarin Studio. To go along with that, we also have <a href="http://developer.xamarin.com/guides/cross-platform/fsharp/fsharp_support_overview/" title="F# Documentation">great getting started documentation</a>, along with a few other fantastic resources to get you going:</p>
+<ul>
+<li><a href="http://fsharp.org/" title="F# Open Organization">F# Open Organization</a></li>
+<li><a href="http://www.tryfsharp.org/" title="F# Learning Portal">F# Learning Portal</a></li>
+<li><a href="http://msdn.microsoft.com/library/ff730280" title="Visual F# Development Portal">Visual F# Development Portal</a></li>
+</ul>
+<h2>Mobile App Samples</h2>
+<p><img class="alignright size-medium wp-image-12199" src="http://blog.xamarin.com/wp-content/uploads/2014/07/shallow.gif" alt="F# Shallow App" width="160" height="300" /><br />
+In addition to documentation here are a few open source F# mobile apps that you can run right away.</p>
+<h3>Shallow</h3>
+<p>Based on popular dating apps, Shallow is a great example of using beautiful animations built into iOS, that you can take advantage of with a few lines of code in F#.</p>
+<p>For a full break down of Shallow&#8217;s features and introduction to its F# goodness be sure to see <a href="http://dvdsgl.co/shallow.html" title="F# Shallow Introduction">the full blog post</a> by Xamarin&#8217;s David Siegel, and its <a href="https://github.com/dvdsgl/shallow" title="Shallow on GitHub">GitHub repo</a>.</p>
+<h3>Tasky F#</h3>
+<p>Recently announced Xamarin Evolve speaker and F# enthusiast Rachel Reese wrote an amazing introduction to <a href="http://blog.xamarin.com/introduction-to-f-with-xamarin-part-ii/" title="Rachel Reese Intro to F#">mobile development in F#</a> post. Not only did she break down all of the benefits of F#, but also built out a full Task taking app, Tasky F#, that is <a href="https://github.com/rachelreese/Tasky" title="Tasky in F#">completely open source on GitHub</a>.</p>
+<h3>Xamarin Store</h3>
+<p><img class="alignright size-medium wp-image-12200" src="http://blog.xamarin.com/wp-content/uploads/2014/07/anuj-f-sharp-shirt-300x300.jpg" alt="anuj f sharp shirt" width="175" height="175" />When we kicked off F# week, we released a brand new version of the Xamarin Store app for iOS and Android. This is where you can get your very own F# t-shirt shipped for FREE directly to your doorstep for trying Xamarin and running your first F# app. This is a beautiful application with elegant animations such as Ken Burn&#8217;s effects on images. <a href="http://xamarin.com/f-sharp-shirt" title="Order you F# Shirt">Download the source code today</a> and get your very own F# t-shirt.</p>
+<h3>Show us your F# Hacks!</h3>
+<p>These are a few great examples to help kick start your F# mobile development with Xamarin. We are sure might have your own F# tips and tricks to share with developers, so head over to our <a href="http://forums.xamarin.com/discussion/19699" title="Show us your F# tips &#038; tricks">Community Forums and share your own F# hacks</a>!<br />
+<meta name="twitter:card" content="summary"><meta name="twitter:site" content="@xamarinhq"><meta name="twitter:title" content="Awesome Samples to Jumpstart F# Mobile Development"><meta name="twitter:description" content="We've compiled a list of guides, samples, and open-source apps get you started on your F# journey. If you are an F# pro, Xamarin would love to see your F# tips, tricks, and other hacks you have."><meta name="twitter:creator" content="@JamesMontemagno"><meta name="twitter:image:src" content="http://blog.xamarin.com/wp-content/uploads/2014/07/shallow.gif"><meta name="twitter:domain" content="http://blog.xamarin.com/jump-start-f-sharp-mobile-development/"></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/jump-start-f-sharp-mobile-development/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Headed to the Capitol for Microsoft WPC 2014</title>
+		<link>http://blog.xamarin.com/headed-to-the-capitol-for-microsoft-wpc-2014/</link>
+		<comments>http://blog.xamarin.com/headed-to-the-capitol-for-microsoft-wpc-2014/#comments</comments>
+		<pubDate>Wed, 02 Jul 2014 18:36:41 +0000</pubDate>
+		<dc:creator><![CDATA[Morgan Forsythe]]></dc:creator>
+				<category><![CDATA[Event]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12278</guid>
+		<description><![CDATA[Xamarin is headed to the capitol to meet with our rapidly growing network of partners, and to strike new relationships at Microsoft’s premier partner event this July.  We will be in Washington, D.C for Microsoft’s Worldwide Partner Conference at booth #828 to meet our community, learn about your apps, and connect with our partners.   [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p><span style="color: #4e5758;">Xamarin is headed to the capitol to meet with our rapidly growing network of partners, and to strike new relationships at Microsoft’s premier partner event this July.  We will be in Washington, D.C for Microsoft’s Worldwide Partner Conference at booth #828 to meet our community, learn about your apps, and connect with our partners.  </span></p>
+<p><img class="aligncenter wp-image-12282" src="http://blog.xamarin.com/wp-content/uploads/2014/07/washington-dc.jpg" alt="washington-dc" width="750" height="204" /></p>
+<p>Join Xamarin for food and drinks during WPC week on <b>Tuesday, July 15th from 7:30 pm to 10:30 pm</b>. We&#8217;ll have a selection of delicious drinks and appetizers, and of course, plenty of mobile development talk. We look forward to seeing you there!</p>
+<p style="text-align: center;"><b>When: </b>Tuesday, July 15th, 7:30pm – 10:30pm</p>
+<p style="text-align: center;"><b>Where: </b>Redline Gastrolounge, 707 G Street Northwest, Washington, D.C. 20001</p>
+<p style="text-align: center;"><a class="action-button featured more" href="http://xamarinwpcdrinkup.eventbrite.com" target="_blank">RSVP</a></p>
+<p>Not at the Worldwide Partner Conference but in the DC area?  Stop by anyway! You and your friends are welcome. Make the most of your time at WPC and <a href="http://xamarin.com/contact">schedule dedicated time</a> with the Xamarin partner team while you’re in town for the conference.</p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/headed-to-the-capitol-for-microsoft-wpc-2014/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+		<item>
+		<title>Introduction to F# with Xamarin, Part II</title>
+		<link>http://blog.xamarin.com/introduction-to-f-with-xamarin-part-ii/</link>
+		<comments>http://blog.xamarin.com/introduction-to-f-with-xamarin-part-ii/#comments</comments>
+		<pubDate>Tue, 01 Jul 2014 21:05:27 +0000</pubDate>
+		<dc:creator><![CDATA[Guest Blogger]]></dc:creator>
+				<category><![CDATA[F#]]></category>
+		<category><![CDATA[iOS]]></category>
+		<guid isPermaLink="false">http://blog.xamarin.com/?p=12259</guid>
+		<description><![CDATA[Rachel Reese is a long-time software engineer and math geek who recently relocated to Nashville, TN to work at Firefly Logic. Rachel is an ASPInsider and an F# MVP. You can catch her at Xamarin Evolve 2014, the largest conference for cross-platform mobile development. This blog post is part of our continuing celebration of F# [&#8230;]]]></description>
+				<content:encoded><![CDATA[<p><a href="http://blog.xamarin.com/wp-content/uploads/2014/06/rachel-reese.png"><img class="size-full wp-image-11330 alignright" src="http://blog.xamarin.com/wp-content/uploads/2014/06/rachel-reese.png" alt="rachel-reese" width="100" height="100" /></a><em>Rachel Reese is a long-time software engineer and math geek who recently relocated to Nashville, TN to work at Firefly Logic. Rachel is an ASPInsider and an F# MVP. You can catch her at Xamarin Evolve 2014, the <a href="https://evolve.xamarin.com/">largest conference for cross-platform mobile development</a>.</em></p>
+<p><em>This blog post is part of our continuing celebration of F# Week at Xamarin! Celebrate by getting your own <a href="http://blog.xamarin.com/run-a-f-sharp-app-get-a-f-sharp-shirt/">F# t-shirt</a>! Yesterday, Rachel gave us an <a href="http://blog.xamarin.com/introduction-to-f-with-xamarin/">&#8220;Introduction to F# with Xamarin&#8221;</a>. Today, she takes us through building a task management app with F# and Xamarin.</em></p>
+<p><strong>Getting Started with iOS Development</strong><br />
+<img src="http://developer.xamarin.com/guides/cross-platform/application_fundamentals/building_cross_platform_applications/case_study-tasky/Images/iOS-TaskyList.png" width="184" height="357" class="alignleft" /> Yesterday, we took a look at the benefits of F# by building much of the data layer for the F# version of the <a href="https://github.com/rachelreese/Tasky">task-management app Tasky</a>. Today, let’s complete that, add a couple of views, and we’ll be up and running with an F# version of Xamarin’s favorite task app!</p>
+<p>In Xamarin Studio, create a new F# iOS Single View Application named &#8220;Tasky&#8221;. Xamarin Studio will create a solution for us, with two important files:</p>
+<ol><strong>1. AppDelegate.fs</strong> – This is the heart of the application. The Main module defines an application’s entry point, while the AppDelegate type inherits from UIApplicationDelegate, which provides such application lifecycle events as ApplicationDidFinishLaunching and ApplicationWillTerminate. From AppDelegate, we’ll define which view controller should load first. In this case, because the application is named Tasky, the first view controller that’s called is TaskyViewController.fs.</ol>
+<ol><strong>2. TaskyViewController.fs</strong> – This is the project’s first view controller. This is inherited from UIViewController, and the main overridable methods here handle the view lifecycle. For example: ViewDidLoad, DidReceiveMemoryWarning, DidRotate, ViewWillDisappear, etc. </ol>
+<p>If we run the project at this point, before making any changes, it will load a blank, black screen. Let’s make it do a bit more. We will start by setting up navigation. Open AppDelegate.fs and update the RootViewController to the following: </p>
+<pre class="brush: plain; title: ; notranslate">
+window.RootViewController &lt;- new UINavigationController (new TaskyViewController ())
+</pre>
+<p>Wrapping the TaskyViewController in a UINavigationController will allow a user to navigate back from the update task screen (once we create it). In other words, that screen will display a back button allowing return to the task list. That finishes off the changes we’ll need to make for Tasky in AppDelegate.fs. </p>
+<p>Next, let’s work on the main view controller. Open TaskyViewController.fs, and we’ll add an event handler in ViewDidLoad, for adding a new task from a “+” button on the navigation bar. </p>
+<pre class="brush: plain; title: ; notranslate">
+let addNewTask =
+    new EventHandler (fun sender eventargs -&gt;
+        this.NavigationController.PushViewController (new AddTaskViewController (), true)
+    )
+this.NavigationItem.SetRightBarButtonItem (new UIBarButtonItem (UIBarButtonSystemIcon.Add, addNewTask), false)
+</pre>
+<p>At this point, we’ll also need to create a nearly empty AddTaskViewController.fs, inherited from UIViewController, like so: </p>
+<pre class="brush: plain; title: ; notranslate">
+type AddTaskViewController () =
+    inherit UIViewController ()
+    override this.ViewDidLoad () =
+        base.ViewDidLoad ()
+</pre>
+<p>Our final project structure will look like this: </p>
+<p><center><a href="http://blog.xamarin.com/wp-content/uploads/2014/07/2014-07-01_1723.png"><img src="http://blog.xamarin.com/wp-content/uploads/2014/07/2014-07-01_1723.png" alt="2014-07-01_1723" width="242" height="255" class="alignnone size-full wp-image-12264" /></a></center></p>
+<p><strong>Creating and Populating with Data</strong></p>
+<p>Now that the navigation is set up, let’s build the task list itself. First, create the UITableView: </p>
+<pre class="brush: fsharp; title: ; notranslate">
+let table &lt;- new UITableView ()
+</pre>
+<p>Next, within the ViewDidLoad method, set the view’s frame to be the full screen, and add the table to the view. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+table.Frame &lt;- this.View.Bounds
+this.View.Add table
+</pre>
+<p>Displaying the table was the easy part. Next, we’ll need to fill the table with data. To help do this, we need to <a href="http://developer.xamarin.com/guides/ios/user_interface/tables/part_2_-_populating_a_table_with_data/">create a UITableViewSource</a>. In our case, we take in the list of tasks that are returned from the SQLite Type Provider, as well as our navigation controller. We will need to include the navigation controller as a parameter, so that we can navigate when the user clicks a row in the table. We also copy the task list locally, and set the cell identifier to a unique name for this cell type. It’s possible to load a mix of different cell types (with completely varied layouts) into an iOS table, and this identifies which one is being loaded. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+type TaskDataSource(tasksource: task list, navigation: UINavigationController) =
+    inherit UITableViewSource ()
+    let tasks = new List&lt;task&gt; (taskSource)
+    member x.cellIDentifier = &quot;TaskCell&quot;
+</pre>
+<p>Once we’ve defined those, there are two methods we absolutely must override in TaskDataSource: RowsInSection, and GetCell. RowsInSection returns the total number of rows that the table contains; GetCell dequeues or creates a new UITableViewCell, then populates that cell with the correct data for that row. [For more information on dequeuing, see the “Note on Cell Reuse” in the Xamarin docs, above.]</p>
+<pre class="brush: fsharp; title: ; notranslate">
+override x.RowsInSection (view, section) = tasks.Count
+override x.GetCell (view, indexPath) =
+    let t = tasks.[indexPath.Item]
+    let cell =
+        let newCell = view.DequeueReusableCell x.cellIdentifier
+        match newCell with
+            | null -&gt; new UITableViewCell (UITableViewCellStyle.Default, x.cellIdentifier)
+            | _ -&gt; newCell
+    cell.TextLabel.Text &lt;- t.Description
+    cell
+</pre>
+<p>With these added, let’s jump back to the TaskyViewController type. We need to override ViewWillAppear, to set the newly created TaskDataSource to be the UITableView source. We also must reload the data each time the view appears. Using the GetIncompleteTasks method we created in the type providers section, we should now be able to run Tasky and load the tasks. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+override this.ViewWillAppear animated =
+    base.ViewWillAppear animated
+    table.Source &lt;- new TaskDataSource (Data.GetIncompleteTasks (), this.NavigationController)
+    table.ReloadData ()
+</pre>
+<p>This will give us the basic set up to load a table of tasks, but we aren’t yet able to navigate to a detail page upon selecting a row, nor are we able to delete with a swipe in from the right. </p>
+<p><strong>Swipe to Delete</strong><br />
+Adding the ability to swipe delete is only a matter of adding two more overrides into the TaskDataSource type. </p>
+<ul>
+<li> CanEditRow is, logically, whether or not that row can be edited.</li>
+<li>CommitEditingStyle handles the deletion. First, delete the task from the data source; second, remove the task from the tasks list; finally, delete that row from the view.</li>
+</ul>
+<pre class="brush: fsharp; title: ; notranslate">
+override x.CanEditRow (view, indexPath) = true
+override x.CommitEditingStyle (view, editingStyle, indexPath) =
+    match editingStyle with
+        | UITableViewCellEditingStyle.Delete -&gt;
+          Data.DeleteTask tasks.[indexPath.Item].Description
+          tasks.RemoveAt (indexPath.Item)
+          view.DeleteRows ( [|indexPath|], UITableViewRowAnimation.Fade)
+        | _ -&gt; Console.WriteLine &quot;CommitEditingStyle:None called&quot;
+</pre>
+<p><strong>Selection and Navigating</strong><br />
+The final step in the TaskyViewController functionality is to handle navigation. To select a row and navigate to a detail page for that row, we only need to override the RowSelected method. In this case, we first want to deselect the row (so that when we return to the view, the row doesn’t remain selected), and then push the new view controller. We’re using the AddTaskViewController, which handles both adding and updating tasks.</p>
+<pre class="brush: fsharp; title: ; notranslate">
+override x&gt;RowSelected (tableView, indexPath) =
+    tableView.DeselectRow (indexPath, false)
+    navigation.PushViewController (new AddTaskViewController (tasks.[indexPath.Item], false), true)
+</pre>
+<p>The above code modifies the constructor of the AddTaskViewController (created previously) to accept a current task, as well as a Boolean determining whether or not that task is a new task. We’ll update this in the next section. </p>
+<p><strong>Creating a Non-Table View</strong><br />
+We’re almost done now; we just need to add a quick form to handle adding and updating a task. Let’s start by updating the constructor to accept a task and a Boolean, as just mentioned. To do this, we need to modify the AddTaskViewController type to take in the new parameters. We’ll also add a second, parameterless constructor, which creates an instance of the controller with some defaults – specifically: Description should be empty, Complete should be false, and the isNew Boolean should be true, exactly as one would expect with a brand new task. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+type AddTaskViewController (task:task, isNew:bool) =
+    inherit UIViewController ()
+    new () = new AddTaskViewController ({Description=&quot;&quot;; Complete=false}, true)
+    override this.ViewDidLoad () =
+        base.ViewDidLoad ()
+</pre>
+<p>Now, let’s move into the ViewDidLoad method. Create a new subview to which we will add our fields, and set the background color to white. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+let addView = new UIView (this.View.Bounds)
+addView.BackgroundColor &lt;- UIColor.White
+</pre>
+<p>From here, we simply add and position our form elements. We’ll start with a UITextField for the Description, and a UISwitch with corresponding UILabel for our Complete field. We also add an event handler to handle setting Complete on our task when the switch is toggled. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+let description = new UITextField (new RectangleF (20.f, 64.f, 280.f, 50.f))
+description.Text &lt;- task.Description
+description.Placeholder &lt;- &quot;task description&quot;
+addView.Add description
+let completeLabel = new UILabel (new RectangleF (20.f, 114.f, 100.f, 30.f))
+completeLabel.Text &lt;- Complete
+addView.Add completeLabel
+let completeCheck = new UISwitch (new RectnagleF (120.f, 114.f, 200.f, 30.f))
+completeCheck.SetState (task.Complete, false)
+let changeCompleteStatus =
+    new EventHandler (fun sender eventargs -&gt;
+        task.Complete &lt;- completeCheck.On
+    )
+completeCheck.TouchDragInside.AddHandler changeCompleteStatus
+addView.Add completeCheck
+</pre>
+<p>Now that the input part is complete, we need to be able to save new tasks, along with a corresponding label to indicate the operation has completed. Depending on whether or not the task is new, we call the appropriate Add or Update function in our Data file, and then print “Added” or “Updated”. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+let addedLabel = new UILabel (new RectangleF (20.f, 214.f, 280.f, 50.f))
+addView.Add addedLabel
+let addUpdateButton = UIButton.FromType (UIButtonType.RoundedRect)
+addUpdateButton.Frame &lt;- new RectangleF (20.f, 164.f, 280.f, 50.f)
+let addUpdateHandler =
+    new EventHandler (fun sender eventargs -&gt;
+        match isNew with
+            | true -&gt;
+                Data.AddTask description.Text
+                addedLabel.Text &lt;- &quot;Added!&quot;
+            | false -&gt;
+                Data.UpdateTask description.Text completeCheck.On
+                addedLabel.Text &lt;- &quot;Updated!&quot;
+        description.Text &lt;- &quot;&quot;
+    )
+addUpdateButton.TouchUpInside.AddHandler addUpdateHandler
+addUpdateButton.SetTItle (&quot;Save&quot;, UIControlState.Normal)
+addView.Add addUpdateButton
+</pre>
+<p>Since the label was added to indicate that saving is complete, we need to clear the text when we want to add a new task, to minimize confusion, and make it obvious that the new task has also been added. To that end, we add a clear label function that is called when the user clicks back into the Description field. </p>
+<pre class="brush: fsharp; title: ; notranslate">
+let clearLabel =
+    new EventHandler (fun sender eventargs -&gt;
+        addedLabel.Text &lt;- &quot;&quot;
+    )
+description.TouchDown.AddHandler clearLabel
+</pre>
+<p>Finally, we simply need to add the subview that we’ve been populating to the main view, and we’re done! </p>
+<pre class="brush: plain; title: ; notranslate">
+this.View.Add addView
+</pre>
+<p>We have just built an F# version of Tasky, Xamarin&#8217;s favorite task-management app! You can get the bits on <a href="https://github.com/rachelreese/Tasky">GitHub</a> and follow me on Twitter <a href="https://twitter.com/rachelreese">@RachelReese</a>.</p>
+<p><meta name="twitter:card" content="summary"><meta name="twitter:site" content="@xamarinhq"><meta name="twitter:title" content="Introduction to F# with Xamarin, Part II"><meta name="twitter:description" content="Learn how to build a task-management app completely in F# with ASPInsider and Microsoft F# MVP Rachel Reese"><meta name="twitter:creator" content="@redth"><meta name="twitter:image:src" content="http://developer.xamarin.com/guides/cross-platform/application_fundamentals/building_cross_platform_applications/case_study-tasky/Images/iOS-TaskyList.png"><meta name="twitter:domain" content="http://xamarin.com"></p>
+]]></content:encoded>
+			<wfw:commentRss>http://blog.xamarin.com/introduction-to-f-with-xamarin-part-ii/feed/</wfw:commentRss>
+		<slash:comments>0</slash:comments>
+		</item>
+	</channel>
+</rss>
